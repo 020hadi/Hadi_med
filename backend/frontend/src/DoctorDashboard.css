@@ -1,0 +1,51 @@
+.doctor-dashboard{min-height:75vh;background:#f7faff;padding:48px 0 70px}
+.doctor-container{width:min(1100px,calc(100% - 36px));margin:auto}
+.doctor-welcome{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(120deg,#0c477a,#1683d4);color:white;padding:30px 34px;border-radius:20px;box-shadow:0 15px 35px #1769a51c}
+.doctor-kicker{display:flex;align-items:center;gap:8px;color:#c7e8ff;font-size:12px;font-weight:700}
+.doctor-welcome h1{font-size:28px;margin:12px 0 6px}
+.doctor-welcome p{font-size:12px;color:#d7ebfa;margin:0}
+.doctor-welcome-icon{width:65px;height:65px;border-radius:18px;background:#ffffff20;display:grid;place-items:center}
+.doctor-info{display:flex;align-items:center;gap:10px;margin:22px 0;padding:15px 18px;background:#eaf5ff;border:1px solid #d8eafa;border-radius:12px;color:#28638e;font-size:12px}
+.schedule-toolbar{display:flex;justify-content:space-between;align-items:center;margin:30px 0 18px}
+.schedule-toolbar h2{font-size:19px;color:#183f60;margin:0 0 7px}
+.schedule-toolbar p{font-size:11px;color:#8194a6;margin:0}
+.doctor-add-btn,.doctor-save-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:10px;padding:12px 18px;font-weight:700;font-size:12px}
+.doctor-add-btn{background:#e8f4ff;color:#1677c7}
+.schedule-day{background:white;border:1px solid #e8eef5;border-radius:15px;margin-bottom:13px;padding:18px 20px}
+.schedule-day-heading{display:flex;align-items:center;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #edf1f5}
+.schedule-day-heading strong{font-size:14px;color:#294c68}
+.schedule-day-heading span{font-size:10px;color:#8196a8;background:#f2f6fa;padding:5px 10px;border-radius:20px}
+.schedule-empty{font-size:11px;color:#9aa9b6;margin:14px 0 2px}
+.schedule-items{display:grid;gap:12px;padding-top:14px}
+.schedule-item{display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr auto auto;gap:12px;align-items:end;padding:13px;background:#f9fbfd;border:1px solid #edf1f5;border-radius:11px}
+.schedule-item label{display:grid;gap:7px;color:#6c8295;font-size:10px;font-weight:700}
+.schedule-item input:not([type=checkbox]),.schedule-item select{width:100%;height:39px;border:1px solid #e0e8ef;border-radius:8px;background:white;padding:0 9px;color:#345;font:inherit;font-size:11px;min-width:0}
+.schedule-active{display:flex!important;align-items:center;gap:7px;height:39px;white-space:nowrap}
+.schedule-active input{accent-color:#1681d4;width:16px;height:16px}
+.schedule-delete{height:39px;width:39px;border:0;border-radius:9px;background:#fff0f0;color:#d65b5b;display:grid;place-items:center}
+.doctor-save-row{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-top:23px;padding:18px 0;border-top:1px solid #e5edf4}
+.doctor-save-row>span{font-size:10px;color:#8496a7}
+.doctor-save-btn{background:linear-gradient(135deg,#2089e3,#126bc0);color:white;min-width:190px;box-shadow:0 8px 20px #1677d226}
+.doctor-save-btn:disabled{opacity:.6;cursor:not-allowed}
+.doctor-error,.doctor-success{padding:12px 15px;border-radius:9px;font-size:11px;line-height:1.8;margin-top:15px}
+.doctor-error{background:#fff0f0;color:#bf4545}
+.doctor-success{background:#eaf8f1;color:#16855e}
+.doctor-state{display:flex;justify-content:center;align-items:center;gap:10px;padding:45px;color:#71879a;font-size:12px}
+.doctor-back-row{text-align:left;margin-top:10px}
+.doctor-back-row button{display:inline-flex;align-items:center;gap:7px;border:0;background:none;color:#668096;font-size:11px}
+.spin{animation:doctor-spin 1s linear infinite}
+@keyframes doctor-spin{to{transform:rotate(360deg)}}
+@media(max-width:760px){
+ .doctor-dashboard{padding:25px 0 45px}
+ .doctor-welcome{padding:23px;border-radius:15px}
+ .doctor-welcome h1{font-size:23px}
+ .doctor-welcome-icon{width:49px;height:49px}
+ .schedule-toolbar{align-items:flex-start;gap:12px}
+ .schedule-toolbar h2{font-size:16px}
+ .doctor-add-btn{padding:10px;font-size:10px;white-space:nowrap}
+ .schedule-item{grid-template-columns:1fr 1fr;align-items:end}
+ .schedule-active{grid-column:auto}
+ .schedule-delete{justify-self:start}
+ .doctor-save-row{align-items:stretch;flex-direction:column}
+ .doctor-save-btn{width:100%}
+}

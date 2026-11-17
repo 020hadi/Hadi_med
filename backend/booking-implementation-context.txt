@@ -1,0 +1,596 @@
+﻿
+
+========== .\package.json ==========
+{
+  "name": "backend",
+  "version": "0.0.1",
+  "description": "",
+  "author": "",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "build": "nest build",
+    "deploy": "nest deploy",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/main",
+    "lint": "oxlint --type-aware src/ test/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "test:debug": "vitest --inspect-brk --no-file-parallelism",
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.0.1",
+    "@nestjs/config": "^12.1.1",
+    "@nestjs/core": "^12.0.1",
+    "@nestjs/jwt": "^12.0.4",
+    "@nestjs/passport": "^12.0.1",
+    "@nestjs/platform-express": "^12.0.1",
+    "@nestjs/swagger": "^12.1.1",
+    "@nestjs/throttler": "^6.7.1",
+    "@prisma/client": "^6.19.3",
+    "bcrypt": "^6.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "helmet": "^8.3.0",
+    "lucide-react": "^1.70.0",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^12.0.0",
+    "@nestjs/mau": "^0.2.6",
+    "@nestjs/schematics": "^12.0.0",
+    "@nestjs/testing": "^12.0.1",
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/supertest": "^7.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "oxlint": "^1.58.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "prettier": "^3.4.2",
+    "prisma": "^6.19.3",
+    "source-map-support": "^0.5.21",
+    "supertest": "^7.0.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.2"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "bcrypt@6.0.0": true,
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true
+  }
+}
+
+
+
+========== .\prisma\schema.prisma ==========
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  UNDISCLOSED
+}
+
+enum OrganizationType {
+  CLINIC
+  HOSPITAL
+  MEDICAL_CENTER
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum AppointmentStatus {
+  PENDING_VERIFICATION
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String?    @unique @db.VarChar(255)
+  phone        String?    @unique @db.VarChar(30)
+  passwordHash String     @db.VarChar(255)
+  firstName    String     @db.VarChar(100)
+  lastName     String     @db.VarChar(100)
+  role         UserRole
+  status       UserStatus @default(PENDING_VERIFICATION)
+
+  patientProfile PatientProfile?
+  doctorProfile  DoctorProfile?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role, status])
+  @@map("users")
+}
+
+model PatientProfile {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @unique @db.Uuid
+  nationalId       String?   @unique @db.VarChar(30)
+  dateOfBirth      DateTime?
+  gender           Gender    @default(UNDISCLOSED)
+  bloodType        String?   @db.VarChar(5)
+  emergencyContact String?   @db.VarChar(30)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("patient_profiles")
+}
+
+model DoctorProfile {
+  id              String  @id @default(uuid()) @db.Uuid
+  userId          String  @unique @db.Uuid
+  licenseNumber   String  @unique @db.VarChar(100)
+  biography       String? @db.Text
+  yearsExperience Int     @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  specialties  DoctorSpecialty[]
+  workplaces   DoctorWorkplace[]
+  schedules    DoctorSchedule[]
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("doctor_profiles")
+}
+
+model Specialty {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique @db.VarChar(120)
+  description String? @db.Text
+
+  doctors DoctorSpecialty[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("specialties")
+}
+
+model DoctorSpecialty {
+  doctorId    String @db.Uuid
+  specialtyId String @db.Uuid
+
+  doctor    DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  specialty Specialty     @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+
+  @@id([doctorId, specialtyId])
+  @@map("doctor_specialties")
+}
+
+model Organization {
+  id      String             @id @default(uuid()) @db.Uuid
+  name    String             @db.VarChar(200)
+  slug    String             @unique @db.VarChar(200)
+  type    OrganizationType
+  status  OrganizationStatus @default(ACTIVE)
+  phone   String?            @db.VarChar(30)
+  email   String?            @db.VarChar(255)
+  address String?            @db.Text
+  city    String?            @db.VarChar(100)
+  country String?            @db.VarChar(100)
+
+  workplaces DoctorWorkplace[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, status])
+  @@map("organizations")
+}
+
+model DoctorWorkplace {
+  doctorId       String  @db.Uuid
+  organizationId String  @db.Uuid
+  isPrimary      Boolean @default(false)
+
+  doctor       DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([doctorId, organizationId])
+  @@map("doctor_workplaces")
+}
+
+model DoctorSchedule {
+  id                  String  @id @default(uuid()) @db.Uuid
+  doctorId            String  @db.Uuid
+  dayOfWeek           Int
+  startMinute         Int
+  endMinute           Int
+  slotDurationMinutes Int     @default(30)
+  timezone            String  @default("UTC") @db.VarChar(60)
+  isActive            Boolean @default(true)
+
+  doctor DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([doctorId, dayOfWeek, isActive])
+  @@map("doctor_schedules")
+}
+
+model Appointment {
+  id           String            @id @default(uuid()) @db.Uuid
+  doctorId     String            @db.Uuid
+  firstName    String            @db.VarChar(100)
+  lastName     String            @db.VarChar(100)
+  phone        String            @db.VarChar(30)
+  startAt      DateTime
+  endAt        DateTime
+  trackingCode String            @unique @db.VarChar(30)
+  status       AppointmentStatus @default(PENDING_VERIFICATION)
+  expiresAt    DateTime?
+  verifiedAt   DateTime?
+
+  doctor        DoctorProfile  @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  otpChallenges OtpChallenge[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([doctorId, startAt, endAt])
+  @@index([phone, createdAt])
+  @@index([status, expiresAt])
+  @@map("appointments")
+}
+
+model OtpChallenge {
+  id                String    @id @default(uuid()) @db.Uuid
+  appointmentId     String    @db.Uuid
+  codeHash          String    @db.VarChar(255)
+  expiresAt         DateTime
+  resendAvailableAt DateTime
+  attempts          Int       @default(0)
+  consumedAt        DateTime?
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([appointmentId, createdAt])
+  @@index([expiresAt])
+  @@map("otp_challenges")
+}
+
+
+
+========== .\src\auth\auth.service.ts ==========
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { UserRole } from '@prisma/client';
+import bcrypt from 'bcrypt';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { RegisterDto } from './dto/register.dto.js';
+import { LoginDto } from './dto/login.dto.js';
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private async createToken(user: { id: string; role: UserRole }) {
+    const accessToken = await this.jwt.signAsync({
+      sub: user.id,
+      role: user.role,
+    });
+
+    return {
+      accessToken,
+      tokenType: 'Bearer',
+      expiresIn: '15m',
+    };
+  }
+
+  async register(dto: RegisterDto) {
+    const email = dto.email.trim().toLowerCase();
+    const role = (dto.role ?? 'PATIENT') as UserRole;
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          ...(dto.phone ? [{ phone: dto.phone }] : []),
+          ...(role === 'DOCTOR' && dto.licenseNumber
+            ? [{ doctorProfile: { is: { licenseNumber: dto.licenseNumber } } }]
+            : []),
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      throw new ConflictException('Email, phone or license number already exists');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
+    try {
+      const user = await this.prisma.user.create({
+        data: {
+          email,
+          phone: dto.phone,
+          passwordHash,
+          firstName: dto.firstName.trim(),
+          lastName: dto.lastName.trim(),
+          role,
+          ...(role === 'PATIENT'
+            ? { patientProfile: { create: {} } }
+            : {
+                doctorProfile: {
+                  create: { licenseNumber: dto.licenseNumber! },
+                },
+              }),
+        },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          status: true,
+        },
+      });
+
+      return {
+        user,
+        ...(await this.createToken(user)),
+      };
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('An account with these details already exists');
+      }
+      throw error;
+    }
+  }
+
+  async login(dto: LoginDto) {
+    const identifier = dto.identifier.trim();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: identifier.toLowerCase() },
+          { phone: identifier },
+        ],
+      },
+    });
+
+    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.status === 'INACTIVE' || user.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Account is not active');
+    }
+
+    const safeUser = {
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      status: user.status,
+    };
+
+    return {
+      user: safeUser,
+      ...(await this.createToken(user)),
+    };
+  }
+
+  async me(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) throw new UnauthorizedException();
+    return user;
+  }
+}
+
+
+========== .\src\auth\auth.module.ts ==========
+import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { AuthController } from './auth.controller.js';
+import { AuthService } from './auth.service.js';
+import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
+import { RolesGuard } from './guards/roles.guard.js';
+
+@Module({
+  imports: [
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.getOrThrow<string>('JWT_SECRET'),
+        signOptions: { expiresIn: '15m' },
+      }),
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, JwtAuthGuard, RolesGuard],
+  exports: [AuthService, JwtAuthGuard, RolesGuard],
+})
+export class AuthModule {}
+
+
+========== .\src\common\filters\http-exception.filter.ts ==========
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
+
+@Catch()
+export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const context = host.switchToHttp();
+    const response = context.getResponse<Response>();
+    const request = context.getRequest<Request>();
+
+    const status =
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    const exceptionResponse =
+      exception instanceof HttpException
+        ? exception.getResponse()
+        : undefined;
+
+    let message: string | string[] = 'Internal server error';
+    let details: unknown;
+
+    if (typeof exceptionResponse === 'string') {
+      message = exceptionResponse;
+    } else if (
+      exceptionResponse !== null &&
+      typeof exceptionResponse === 'object'
+    ) {
+      const body = exceptionResponse as Record<string, unknown>;
+
+      const rawMessage = body['message'];
+
+      if (typeof rawMessage === 'string' || Array.isArray(rawMessage)) {
+        message = rawMessage as string | string[];
+      }
+
+      details = body['details'];
+    }
+
+    if (status >= 500) {
+      this.logger.error(
+        exception instanceof Error
+          ? exception.stack
+          : String(exception),
+      );
+    }
+
+    response.status(status).json({
+      success: false,
+      statusCode: status,
+      message,
+      ...(details !== undefined ? { details } : {}),
+      timestamp: new Date().toISOString(),
+      path: request.url,
+    });
+  }
+}
+
+
+
+========== .\src\app.module.ts ==========
+import { Module } from '@nestjs/common';
+import { AuthModule } from './auth/auth.module.js';
+import { ConfigModule } from '@nestjs/config';
+
+import { HealthModule } from './health/health.module.js';
+import { PrismaModule } from './prisma/prisma.module.js';
+import { envSchema } from './config/env.schema.js';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+      validate: (config) => envSchema.parse(config),
+    }),
+    AuthModule,
+    PrismaModule,
+    HealthModule,
+  ],
+})
+export class AppModule {}
+
+
+========== .\src\config\env.schema.ts ==========
+import { z } from 'zod';
+
+export const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+});
