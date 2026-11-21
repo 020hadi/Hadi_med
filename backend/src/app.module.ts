@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { AppointmentsModule } from './modules/appointments/appointments.module.js';
 import { DoctorsModule } from './modules/doctors/doctors.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
+import { MedicalRecordsModule } from './modules/medical-records/medical-records.module.js';
 import { envSchema } from './config/env.schema.js';
 
 @Module({
@@ -21,6 +22,7 @@ import { envSchema } from './config/env.schema.js';
     AppointmentsModule,
     DoctorsModule,
     AdminModule,
+    MedicalRecordsModule,
   ],
 })
 export class AppModule {}

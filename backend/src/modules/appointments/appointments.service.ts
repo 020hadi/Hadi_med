@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   ConflictException,
   Injectable,
@@ -9,7 +9,7 @@
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { SmsService } from './sms.service.js';
+import { SmsService } from '../../common/sms/sms.service.js';
 import type {
   RequestOtpDto,
   VerifyOtpDto,
@@ -161,6 +161,9 @@ export class AppointmentsService {
       where: {
         id: doctorId,
         verificationStatus: 'APPROVED',
+        user: {
+          is: { status: 'ACTIVE' },
+        },
       },
       select: { id: true },
     });
@@ -255,7 +258,51 @@ export class AppointmentsService {
     return { doctorId, date, slots };
   }
 
-  async requestOtp(body: unknown) {
+  async requestOtpForPatient(userId: string, body: unknown) {
+    const input = body as { doctorId: string; startAt: string };
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        role: true,
+        status: true,
+        phone: true,
+        phoneVerifiedAt: true,
+        firstName: true,
+        lastName: true,
+        patientProfile: { select: { id: true } },
+      },
+    });
+
+    if (
+      !user ||
+      user.status !== 'ACTIVE' ||
+      user.role !== 'PATIENT'
+    ) {
+      throw new BadRequestException('Active patient account required');
+    }
+
+    if (!user.phone || !user.phoneVerifiedAt) {
+      throw new BadRequestException('A verified phone number is required');
+    }
+
+    if (!user.patientProfile) {
+      throw new BadRequestException('Patient profile is not configured');
+    }
+
+    return this.requestOtp(
+      {
+        doctorId: input.doctorId,
+        startAt: input.startAt,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+      },
+      user.patientProfile.id,
+    );
+  }
+  async requestOtp(body: unknown, patientProfileId: string | null = null) {
     const input = body as RequestOtpDto;
     await this.ensureDoctorApproved(input.doctorId);
     const phone = this.normalizePhone(input.phone);
@@ -292,7 +339,7 @@ export class AppointmentsService {
       return (
         local.dayOfWeek === schedule.dayOfWeek &&
         minute >= schedule.startMinute &&
-        minute < schedule.endMinute &&
+        minute + schedule.slotDurationMinutes <= schedule.endMinute &&
         (minute - schedule.startMinute) %
           schedule.slotDurationMinutes === 0 &&
         startAt.getSeconds() === 0 &&
@@ -354,6 +401,7 @@ export class AppointmentsService {
       const created = await tx.appointment.create({
         data: {
           doctorId: input.doctorId,
+          patientProfileId,
           firstName: input.firstName,
           lastName: input.lastName,
           phone,
@@ -399,14 +447,36 @@ export class AppointmentsService {
     };
   }
 
-  async verifyOtp(body: unknown) {
+  async verifyOtpForPatient(userId: string, body: unknown) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        status: true,
+        patientProfile: { select: { id: true } },
+      },
+    });
+
+    if (!user || user.status !== 'ACTIVE' || user.role !== 'PATIENT') {
+      throw new NotFoundException('Active patient account not found');
+    }
+    if (!user.patientProfile) {
+      throw new NotFoundException('Patient profile not found');
+    }
+
+    return this.verifyOtp(body, user.patientProfile.id);
+  }
+  async verifyOtp(body: unknown, patientProfileId: string | null = null) {
     const input = body as VerifyOtpDto;
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`WITH lock AS MATERIALIZED (SELECT pg_advisory_xact_lock(hashtext(${input.appointmentId}))) SELECT 1::int AS locked FROM lock`;
-      const appointment = await tx.appointment.findUnique({
-        where: { id: input.appointmentId },
+      const appointment = await tx.appointment.findFirst({
+        where: {
+          id: input.appointmentId,
+          ...(patientProfileId ? { patientProfileId } : {}),
+        },
       });
 
       if (
@@ -501,7 +571,26 @@ export class AppointmentsService {
     };
   }
 
-  async resendOtp(body: unknown) {
+  async resendOtpForPatient(userId: string, body: unknown) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        status: true,
+        patientProfile: { select: { id: true } },
+      },
+    });
+
+    if (!user || user.status !== 'ACTIVE' || user.role !== 'PATIENT') {
+      throw new NotFoundException('Active patient account not found');
+    }
+    if (!user.patientProfile) {
+      throw new NotFoundException('Patient profile not found');
+    }
+
+    return this.resendOtp(body, user.patientProfile.id);
+  }
+  async resendOtp(body: unknown, patientProfileId: string | null = null) {
     const input = body as ResendOtpDto;
     const now = new Date();
     const code = this.generateOtp();
@@ -511,8 +600,11 @@ export class AppointmentsService {
     const challenge = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`WITH lock AS MATERIALIZED (SELECT pg_advisory_xact_lock(hashtext(${input.appointmentId}))) SELECT 1::int AS locked FROM lock`;
 
-      const appointment = await tx.appointment.findUnique({
-        where: { id: input.appointmentId },
+      const appointment = await tx.appointment.findFirst({
+        where: {
+          id: input.appointmentId,
+          ...(patientProfileId ? { patientProfileId } : {}),
+        },
       });
 
       if (
@@ -607,6 +699,146 @@ export class AppointmentsService {
       success: true,
       message: 'A new verification code was sent',
       expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async getMyAppointments(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        role: true,
+        status: true,
+        patientProfile: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (
+      !user ||
+      user.role !== 'PATIENT' ||
+      user.status !== 'ACTIVE' ||
+      !user.patientProfile
+    ) {
+      throw new BadRequestException('Active patient account required');
+    }
+
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        patientProfileId: user.patientProfile.id,
+      },
+      include: {
+        doctor: {
+          include: {
+            user: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+            specialties: {
+              include: {
+                specialty: {
+                  select: { name: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        startAt: 'desc',
+      },
+    });
+
+    return {
+      appointments: appointments.map((appointment) => ({
+        id: appointment.id,
+        trackingCode: appointment.trackingCode,
+        status: appointment.status,
+        startAt: appointment.startAt.toISOString(),
+        endAt: appointment.endAt.toISOString(),
+        createdAt: appointment.createdAt.toISOString(),
+        doctor: {
+          doctorId: appointment.doctorId,
+          firstName: appointment.doctor.user.firstName,
+          lastName: appointment.doctor.user.lastName,
+          specialties: appointment.doctor.specialties.map(
+            (item) => item.specialty.name,
+          ),
+        },
+      })),
+    };
+  }
+
+  async cancelMyAppointment(userId: string, appointmentId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        status: true,
+        patientProfile: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (
+      !user ||
+      user.role !== 'PATIENT' ||
+      user.status !== 'ACTIVE' ||
+      !user.patientProfile
+    ) {
+      throw new BadRequestException('Active patient account required');
+    }
+
+    const appointment = await this.prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        patientProfileId: user.patientProfile.id,
+      },
+      select: {
+        id: true,
+        status: true,
+        startAt: true,
+      },
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    if (
+      appointment.status !== 'CONFIRMED' ||
+      appointment.startAt <= new Date()
+    ) {
+      throw new ConflictException(
+        'Only future confirmed appointments can be cancelled',
+      );
+    }
+
+    const result = await this.prisma.appointment.updateMany({
+      where: {
+        id: appointment.id,
+        patientProfileId: user.patientProfile.id,
+        status: 'CONFIRMED',
+        startAt: { gt: new Date() },
+      },
+      data: {
+        status: 'CANCELLED',
+      },
+    });
+
+    if (result.count !== 1) {
+      throw new ConflictException(
+        'Appointment could not be cancelled',
+      );
+    }
+
+    return {
+      success: true,
+      message: 'Appointment cancelled successfully',
     };
   }
 }

@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 
 export const requestOtpSchema = z.object({
   doctorId: z.string().uuid(),
@@ -9,6 +9,13 @@ export const requestOtpSchema = z.object({
 });
 
 export type RequestOtpDto = z.infer<typeof requestOtpSchema>;
+
+export const requestMemberOtpSchema = z.object({
+  doctorId: z.string().uuid(),
+  startAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export type RequestMemberOtpDto = z.infer<typeof requestMemberOtpSchema>;
 
 export const verifyOtpSchema = z.object({
   appointmentId: z.string().uuid(),

@@ -8,6 +8,7 @@ import './index.css'
 import DoctorDashboard from './DoctorDashboard'
 import AdminDashboard from './AdminDashboard'
 import DoctorBooking from './DoctorBooking'
+import PatientDashboard from './PatientDashboard'
 
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1'
 
@@ -292,7 +293,7 @@ export default function App() {
         </div>
       </header>
 
-      {user?.role === 'ADMIN' ? <AdminDashboard /> : user?.role === 'DOCTOR' ? <DoctorDashboard /> : <main>
+      {user?.role === 'ADMIN' ? <AdminDashboard /> : user?.role === 'DOCTOR' ? <DoctorDashboard /> : user?.role === 'PATIENT' ? <PatientDashboard firstName={user.firstName} lastName={user.lastName} /> : <main>
         <section className="hero" id="home">
           <div className="container hero-grid">
             <div className="hero-content">

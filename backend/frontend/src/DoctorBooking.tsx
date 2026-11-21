@@ -38,8 +38,18 @@ function currentJalaliMonth() {
   return { jy, jm }
 }
 export default function DoctorBooking({
-  doctor, api, onClose,
-}: { doctor: Doctor; api: string; onClose: () => void }) {
+  doctor,
+  api,
+  onClose,
+  authenticated = false,
+  onBooked,
+}: {
+  doctor: Doctor;
+  api: string;
+  onClose: () => void;
+  authenticated?: boolean;
+  onBooked?: () => void;
+}) {
   const [date, setDate] = useState(tehranDate())
   const [visibleMonth, setVisibleMonth] = useState(currentJalaliMonth)
   const today = tehranDate()
@@ -87,89 +97,173 @@ export default function DoctorBooking({
   }, [api, date, doctor.doctorId])
 
   const requestOtp = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!selected) { setError('ابتدا یک زمان آزاد انتخاب کنید.'); return }
-    setLoading(true)
-    setError('')
-    try {
-      const response = await fetch(`${api}/appointments/request-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          doctorId: doctor.doctorId,
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          phone: phone.trim(),
-          startAt: selected,
-        }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join('، ') : result.message || 'ارسال کد تأیید ناموفق بود.')
-      const data = unwrap(result)
-      if (!data?.appointmentId) throw new Error('شناسه نوبت در پاسخ سرور موجود نیست.')
-      setAppointmentId(data.appointmentId)
-      setTrackingCode(data.trackingCode || '')
-      setStep('otp')
-      setMessage('کد تأیید برای شماره همراه شما ارسال شد.')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'خطا در ثبت درخواست نوبت')
-    } finally {
-      setLoading(false)
-    }
-  }
+    event.preventDefault();
 
-  const verifyOtp = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setLoading(true)
-    setError('')
-    try {
-      const response = await fetch(`${api}/appointments/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId, code }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join('، ') : result.message || 'کد تأیید معتبر نیست.')
-      const data = unwrap(result)
-      setTrackingCode(data?.appointment?.trackingCode || trackingCode)
-      setStep('done')
-      setMessage('نوبت شما با موفقیت تأیید شد.')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'تأیید نوبت ناموفق بود.')
-    } finally {
-      setLoading(false)
+    if (!selected) {
+      setError('ابتدایک زمان آزاد انتخاب کنید.');
+      return;
     }
-  }
 
-  const resendOtp = async () => {
-    setLoading(true)
-    setError('')
+    setLoading(true);
+    setError('');
+
     try {
-      const response = await fetch(`${api}/appointments/resend-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId }),
-      })
-      const result = await response.json()
-      if (response.status === 404) {
-        throw new Error('مهلت رزرو پایان یافته است. لطفاً تاریخ و زمان دیگری انتخاب کنید.')
+      const token = sessionStorage.getItem('hadimed_token');
+
+      if (authenticated && !token) {
+        throw new Error('نشست کاربری معتبر نیست. دوباره وارد شوید.');
       }
+
+      const response = await fetch(
+        `${api}/appointments/${authenticated ? 'me/request-otp' : 'request-otp'}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authenticated && token
+              ? { Authorization: `Bearer ${token}` }
+              : {}),
+          },
+          body: JSON.stringify(
+            authenticated
+              ? {
+                  doctorId: doctor.doctorId,
+                  startAt: selected,
+                }
+              : {
+                  doctorId: doctor.doctorId,
+                  firstName: firstName.trim(),
+                  lastName: lastName.trim(),
+                  phone: phone.trim(),
+                  startAt: selected,
+                },
+          ),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          Array.isArray(result.message)
+            ? result.message.join('، ')
+            : result.message || 'ارسال کد تأیید ناموفق بود.',
+        );
+      }
+
+      const data = unwrap(result);
+
+      if (!data?.appointmentId) {
+        throw new Error('شناسه نوبت در پاسخ سرور موجود نیست.');
+      }
+
+      setAppointmentId(data.appointmentId);
+      setTrackingCode(data.trackingCode || '');
+      setStep('otp');
+      setMessage('کد تأیید برای شماره همراه شما ارسال شد.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'خطا در ثبت درخواست نوبت');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+    const verifyOtp = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const token = sessionStorage.getItem('hadimed_token');
+
+      if (authenticated && !token) {
+        throw new Error('نشست کاربری معتبر نیست. دوباره وارد شوید.');
+      }
+
+      const response = await fetch(
+        `${api}/appointments/${authenticated ? 'me/verify-otp' : 'verify-otp'}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authenticated && token
+              ? { Authorization: `Bearer ${token}` }
+              : {}),
+          },
+          body: JSON.stringify({ appointmentId, code }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          Array.isArray(result.message)
+            ? result.message.join('، ')
+            : result.message || 'کد تأیید معتبر نیست.',
+        );
+      }
+
+      const data = unwrap(result);
+      setTrackingCode(data?.appointment?.trackingCode || trackingCode);
+      setStep('done');
+      setMessage('نوبت شما با موفقیت تأیید شد.');
+      onBooked?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'تأیید نوبت ناموفق بود.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+    const resendOtp = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const token = sessionStorage.getItem('hadimed_token');
+
+      if (authenticated && !token) {
+        throw new Error('نشست کاربری معتبر نیست. دوباره وارد شوید.');
+      }
+
+      const response = await fetch(
+        `${api}/appointments/${authenticated ? 'me/resend-otp' : 'resend-otp'}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authenticated && token
+              ? { Authorization: `Bearer ${token}` }
+              : {}),
+          },
+          body: JSON.stringify({ appointmentId }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (response.status === 404) {
+        throw new Error('مهلت رزرو پایان یافته است. لطفاً تاریخ و زمان دیگری انتخاب کنید.');
+      }
+
       if (!response.ok) {
         const apiMessage = Array.isArray(result.message)
           ? result.message.join('، ')
-          : result.message
-        throw new Error(apiMessage || 'ارسال مجدد کد ناموفق بود.')
+          : result.message;
+        throw new Error(apiMessage || 'ارسال مجدد کد ناموفق بود.');
       }
-      setCode('')
-      setMessage('کد جدید ارسال شد.')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'ارسال مجدد کد ناموفق بود.')
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  return (
+      setCode('');
+      setMessage('کد جدید ارسال شد.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'ارسال مجدد کد ناموفق بود.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+    return (
     <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <section className="auth-modal booking-modal" dir="rtl">
         <button type="button" className="modal-close" onClick={onClose} aria-label="بستن">×</button>
@@ -233,14 +327,49 @@ export default function DoctorBooking({
               {slots.length === 0 && !error && <p className="empty">زمان آزادی برای این تاریخ ثبت نشده است.</p>}
             </div>
             <form onSubmit={requestOtp}>
-              <div className="form-row">
-                <label>نام<input required minLength={2} maxLength={100} value={firstName} onChange={e => setFirstName(e.target.value)} /></label>
-                <label>نام خانوادگی<input required minLength={2} maxLength={100} value={lastName} onChange={e => setLastName(e.target.value)} /></label>
-              </div>
-              <label>شماره موبایل
-                <input required type="tel" dir="ltr" placeholder="09123456789 یا ‎+989123456789" value={phone} onChange={e => setPhone(e.target.value)} />
-              </label>
-              <button className="btn btn-primary submit-btn" disabled={loading || !selected}>{loading ? 'در حال ارسال...' : 'ثبت درخواست و دریافت کد'}</button>
+              {!authenticated && (
+                <>
+                  <div className="form-row">
+                    <label>
+                      نام
+                      <input
+                        required
+                        minLength={2}
+                        maxLength={100}
+                        value={firstName}
+                        onChange={e => setFirstName(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      نام خانوادگی
+                      <input
+                        required
+                        minLength={2}
+                        maxLength={100}
+                        value={lastName}
+                        onChange={e => setLastName(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    شماره موبایل
+                    <input
+                      required
+                      type="tel"
+                      dir="ltr"
+                      placeholder="09123456789 or +989123456789"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+              <button
+                className="btn btn-primary submit-btn"
+                disabled={loading || !selected}
+              >
+                {loading ? 'در حال ارسال...' : 'ثبت درخواست و دریافت کد'}
+              </button>
             </form>
           </>
         )}

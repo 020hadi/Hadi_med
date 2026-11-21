@@ -13,6 +13,8 @@ import { AuthService } from './auth.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
+import { RequestPhoneOtpDto } from './dto/request-phone-otp.dto.js';
+import { VerifyPhoneOtpDto } from './dto/verify-phone-otp.dto.js';
 import { JwtAuthGuard, type AuthenticatedUser } from './guards/jwt-auth.guard.js';
 
 type AuthenticatedRequest = Request & { user: AuthenticatedUser };
@@ -54,6 +56,23 @@ export class AuthController {
     return this.authService.me(request.user.id);
   }
 
+  @Post('phone/request-otp')
+  @UseGuards(JwtAuthGuard)
+  requestPhoneOtp(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: RequestPhoneOtpDto,
+  ) {
+    return this.authService.requestPhoneOtp(request.user.id, dto.phone);
+  }
+
+  @Post('phone/verify-otp')
+  @UseGuards(JwtAuthGuard)
+  verifyPhoneOtp(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: VerifyPhoneOtpDto,
+  ) {
+    return this.authService.verifyPhoneOtp(request.user.id, dto.code);
+  }
   @Post('logout')
   logout(@Body() dto: RefreshTokenDto) {
     return this.authService.logoutWithRefreshToken(dto.refreshToken);

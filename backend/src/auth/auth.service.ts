@@ -7,11 +7,12 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { SmsService } from '../common/sms/sms.service.js';
 
 type SessionMetadata = { ip?: string; userAgent?: string };
 type TokenPayload = { sub: string; sid: string; typ: 'access' | 'refresh' };
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly sms: SmsService,
   ) {}
 
   private get secret(): string {
@@ -43,6 +45,31 @@ export class AuthService {
     return secret;
   }
 
+  private normalizePhone(phone: string): string {
+    const cleaned = phone.replace(/[\s()-]/g, '');
+
+    if (/^09\d{9}$/.test(cleaned)) {
+      return `+98${cleaned.slice(1)}`;
+    }
+
+    if (/^\+[1-9]\d{7,14}$/.test(cleaned)) {
+      return cleaned;
+    }
+
+    throw new ConflictException('Invalid phone number');
+  }
+
+  private hashPhoneOtp(code: string): string {
+    return createHmac('sha256', this.secret).update(code).digest('hex');
+  }
+
+  private comparePhoneOtp(code: string, hash: string): boolean {
+    const actual = Buffer.from(this.hashPhoneOtp(code), 'hex');
+    const expected = Buffer.from(hash, 'hex');
+
+    return actual.length === expected.length &&
+      timingSafeEqual(actual, expected);
+  }
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
   }
@@ -90,7 +117,10 @@ export class AuthService {
       where: {
         OR: [
           { email },
-          ...(dto.phone ? [{ phone: dto.phone }] : []),
+          ...(dto.phone ? [
+            { phone: this.normalizePhone(dto.phone) },
+            { pendingPhone: this.normalizePhone(dto.phone) },
+          ] : []),
           ...(role === 'DOCTOR' && dto.licenseNumber
             ? [{ doctorProfile: { is: { licenseNumber: dto.licenseNumber } } }]
             : []),
@@ -109,7 +139,7 @@ export class AuthService {
       const user = await this.prisma.user.create({
         data: {
           email,
-          phone: dto.phone,
+          pendingPhone: dto.phone ? this.normalizePhone(dto.phone) : null,
           passwordHash,
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
@@ -156,13 +186,25 @@ export class AuthService {
 
   async login(dto: LoginDto, metadata: SessionMetadata = {}) {
     const identifier = dto.identifier.trim();
+    let phoneIdentifier: string | undefined;
+
+    try {
+      phoneIdentifier = this.normalizePhone(identifier);
+    } catch {
+      phoneIdentifier = undefined;
+    }
+
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ email: identifier.toLowerCase() }, { phone: identifier }],
+        OR: [
+          { email: identifier.toLowerCase() },
+          ...(phoneIdentifier
+            ? [{ phone: phoneIdentifier, phoneVerifiedAt: { not: null } }]
+            : []),
+        ],
       },
     });
 
-    console.info('[AUTH_DIAG] userFound:', Boolean(user));
 
 
     const passwordMatches = user
@@ -172,7 +214,6 @@ export class AuthService {
       : false;
 
 
-    console.info('[AUTH_DIAG] passwordMatches:', passwordMatches);
 
 
     if (!user || !passwordMatches) {
@@ -201,6 +242,173 @@ export class AuthService {
     };
   }
 
+  async requestPhoneOtp(userId: string, rawPhone: string) {
+    const phone = this.normalizePhone(rawPhone);
+    const now = new Date();
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        status: true,
+        phone: true,
+        phoneVerifiedAt: true,
+        pendingPhone: true,
+      },
+    });
+
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Active account required');
+    }
+
+    if (user.phone === phone && user.phoneVerifiedAt) {
+      return { success: true, alreadyVerified: true };
+    }
+
+    const duplicate = await this.prisma.user.findFirst({
+      where: {
+        id: { not: userId },
+        OR: [{ phone }, { pendingPhone: phone }],
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      throw new ConflictException('This phone number is already in use');
+    }
+
+    const recent = await this.prisma.phoneVerificationChallenge.count({
+      where: {
+        userId,
+        createdAt: { gte: new Date(now.getTime() - 60 * 60 * 1000) },
+      },
+    });
+
+    if (recent >= 5) {
+      throw new ConflictException('Too many OTP requests. Try again later.');
+    }
+
+    const code = randomInt(100000, 1000000).toString();
+    const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
+    const resendAvailableAt = new Date(now.getTime() + 60 * 1000);
+
+    const challenge = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { pendingPhone: phone },
+      });
+
+      await tx.phoneVerificationChallenge.updateMany({
+        where: { userId, consumedAt: null },
+        data: { consumedAt: now },
+      });
+
+      return tx.phoneVerificationChallenge.create({
+        data: {
+          userId,
+          phone,
+          codeHash: this.hashPhoneOtp(code),
+          expiresAt,
+          resendAvailableAt,
+        },
+      });
+    });
+
+    try {
+      await this.sms.sendOtp(phone, code);
+    } catch (error) {
+      await this.prisma.phoneVerificationChallenge.updateMany({
+        where: { id: challenge.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      throw error;
+    }
+
+    return {
+      success: true,
+      message: 'Phone verification code sent',
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async verifyPhoneOtp(userId: string, code: string) {
+    const now = new Date();
+
+    const challenge = await this.prisma.phoneVerificationChallenge.findFirst({
+      where: {
+        userId,
+        consumedAt: null,
+        expiresAt: { gt: now },
+        user: { is: { pendingPhone: { not: null }, status: 'ACTIVE' } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!challenge) {
+      throw new UnauthorizedException('No active phone verification challenge');
+    }
+
+    const attempt = await this.prisma.phoneVerificationChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        consumedAt: null,
+        expiresAt: { gt: now },
+        attempts: { lt: 5 },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+
+    if (attempt.count !== 1) {
+      throw new UnauthorizedException('Maximum OTP attempts reached');
+    }
+
+    if (!this.comparePhoneOtp(code, challenge.codeHash)) {
+      throw new UnauthorizedException('Invalid verification code');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.phoneVerificationChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          consumedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { consumedAt: now },
+      });
+
+      if (consumed.count !== 1) {
+        throw new UnauthorizedException('Verification code is no longer valid');
+      }
+
+      const updated = await tx.user.updateMany({
+        where: {
+          id: userId,
+          status: 'ACTIVE',
+          pendingPhone: challenge.phone,
+        },
+        data: {
+          phone: challenge.phone,
+          pendingPhone: null,
+          phoneVerifiedAt: now,
+        },
+      });
+
+      if (updated.count !== 1) {
+        throw new ConflictException('Phone number changed. Request a new code.');
+      }
+
+      return tx.user.findUnique({
+        where: { id: userId },
+        select: userSelect,
+      });
+    });
+
+    return {
+      success: true,
+      message: 'Phone number verified',
+      user: result,
+    };
+  }
   async refresh(refreshToken: string) {
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required');

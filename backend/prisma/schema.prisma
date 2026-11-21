@@ -55,21 +55,29 @@ enum DoctorVerificationStatus {
 }
 
 model User {
-  id           String     @id @default(uuid()) @db.Uuid
-  email        String?    @unique @db.VarChar(255)
-  phone        String?    @unique @db.VarChar(30)
-  passwordHash String     @db.VarChar(255)
-  firstName    String     @db.VarChar(100)
-  lastName     String     @db.VarChar(100)
-  role         UserRole
-  status       UserStatus @default(PENDING_VERIFICATION)
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String?    @unique @db.VarChar(255)
+  phone           String?    @unique @db.VarChar(30)
+  pendingPhone    String?    @unique @db.VarChar(30)
+  phoneVerifiedAt DateTime?  @db.Timestamptz(3)
+  passwordHash    String     @db.VarChar(255)
+  firstName       String     @db.VarChar(100)
+  lastName        String     @db.VarChar(100)
+  role            UserRole
+  status          UserStatus @default(PENDING_VERIFICATION)
 
-  patientProfile              PatientProfile?
-  doctorProfile               DoctorProfile?
-  reviewedDoctors             DoctorProfile[]       @relation("DoctorReviewer")
-  managedOrganizations        OrganizationManager[] @relation("OrganizationManagerUser")
-  organizationAssignmentsMade OrganizationManager[] @relation("OrganizationManagerAssigner")
+  patientProfile               PatientProfile?
+  doctorProfile                DoctorProfile?
+  reviewedDoctors              DoctorProfile[]              @relation("DoctorReviewer")
+  managedOrganizations         OrganizationManager[]        @relation("OrganizationManagerUser")
+  organizationAssignmentsMade  OrganizationManager[]        @relation("OrganizationManagerAssigner")
   sessions                     UserSession[]
+  phoneVerificationChallenges  PhoneVerificationChallenge[]
+  createdMedicalRecords        MedicalRecord[]              @relation("MedicalRecordCreator")
+  authoredEncounters           ClinicalEncounter[]          @relation("EncounterAuthor")
+  medicalRecordAccessLogs      MedicalRecordAccessLog[]     @relation("MedicalRecordAccessActor")
+  grantedMedicalRecordConsents MedicalRecordConsent[]       @relation("ConsentGrantor")
+  uploadedMedicalDocuments     MedicalDocument[]            @relation("MedicalDocumentUploader")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -88,6 +96,11 @@ model PatientProfile {
   emergencyContact String?   @db.VarChar(30)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  medicalRecord MedicalRecord?
+  appointments  Appointment[]
+  allergies     PatientAllergy[]
+  conditions    MedicalCondition[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -110,10 +123,13 @@ model DoctorProfile {
   user     User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewer User? @relation("DoctorReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 
-  specialties  DoctorSpecialty[]
-  workplaces   DoctorWorkplace[]
-  schedules    DoctorSchedule[]
-  appointments Appointment[]
+  specialties           DoctorSpecialty[]
+  workplaces            DoctorWorkplace[]
+  schedules             DoctorSchedule[]
+  appointments          Appointment[]
+  clinicalEncounters    ClinicalEncounter[]
+  prescriptions         Prescription[]
+  medicalRecordConsents MedicalRecordConsent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -203,26 +219,30 @@ model DoctorSchedule {
 }
 
 model Appointment {
-  id           String            @id @default(uuid()) @db.Uuid
-  doctorId     String            @db.Uuid
-  firstName    String            @db.VarChar(100)
-  lastName     String            @db.VarChar(100)
-  phone        String            @db.VarChar(30)
-  startAt      DateTime
-  endAt        DateTime
-  trackingCode String            @unique @db.VarChar(30)
-  status       AppointmentStatus @default(PENDING_VERIFICATION)
-  expiresAt    DateTime?
-  verifiedAt   DateTime?
+  id               String            @id @default(uuid()) @db.Uuid
+  doctorId         String            @db.Uuid
+  patientProfileId String?           @db.Uuid
+  firstName        String            @db.VarChar(100)
+  lastName         String            @db.VarChar(100)
+  phone            String            @db.VarChar(30)
+  startAt          DateTime
+  endAt            DateTime
+  trackingCode     String            @unique @db.VarChar(30)
+  status           AppointmentStatus @default(PENDING_VERIFICATION)
+  expiresAt        DateTime?
+  verifiedAt       DateTime?
 
-  doctor        DoctorProfile  @relation(fields: [doctorId], references: [id], onDelete: Restrict)
-  otpChallenges OtpChallenge[]
+  doctor            DoctorProfile      @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  patientProfile    PatientProfile?    @relation(fields: [patientProfileId], references: [id], onDelete: SetNull)
+  otpChallenges     OtpChallenge[]
+  clinicalEncounter ClinicalEncounter?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([doctorId, startAt, endAt])
   @@index([phone, createdAt])
+  @@index([patientProfileId, createdAt])
   @@index([status, expiresAt])
   @@map("appointments")
 }
@@ -243,6 +263,26 @@ model OtpChallenge {
   @@index([appointmentId, createdAt])
   @@index([expiresAt])
   @@map("otp_challenges")
+}
+
+model PhoneVerificationChallenge {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  phone             String    @db.VarChar(30)
+  codeHash          String    @db.VarChar(255)
+  expiresAt         DateTime  @db.Timestamptz(3)
+  resendAvailableAt DateTime  @db.Timestamptz(3)
+  attempts          Int       @default(0)
+  consumedAt        DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+  @@map("phone_verification_challenges")
 }
 
 model OrganizationManager {
@@ -280,4 +320,319 @@ model UserSession {
   @@index([userId, expiresAt])
   @@index([expiresAt])
   @@map("user_sessions")
+}
+
+enum MedicalRecordStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum EncounterStatus {
+  DRAFT
+  SIGNED
+  AMENDED
+  CANCELLED
+}
+
+enum AllergySeverity {
+  MILD
+  MODERATE
+  SEVERE
+  LIFE_THREATENING
+  UNKNOWN
+}
+
+enum DiagnosisType {
+  PRIMARY
+  SECONDARY
+  DIFFERENTIAL
+}
+
+enum PrescriptionStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+  COMPLETED
+}
+
+enum MedicalConsentStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum MedicalRecordAccessAction {
+  VIEW
+  CREATE
+  UPDATE
+  SIGN
+  DOWNLOAD
+  CONSENT_GRANTED
+  CONSENT_REVOKED
+}
+
+model MedicalRecord {
+  id               String              @id @default(uuid()) @db.Uuid
+  patientProfileId String              @unique @db.Uuid
+  status           MedicalRecordStatus @default(ACTIVE)
+  createdById      String              @db.Uuid
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Restrict)
+  createdBy      User           @relation("MedicalRecordCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  encounters ClinicalEncounter[]
+  vitalSigns VitalSign[]
+  labResults LabResult[]
+  documents  MedicalDocument[]
+  consents   MedicalRecordConsent[]
+  accessLogs MedicalRecordAccessLog[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@map("medical_records")
+}
+
+model ClinicalEncounter {
+  id              String          @id @default(uuid()) @db.Uuid
+  medicalRecordId String          @db.Uuid
+  doctorId        String          @db.Uuid
+  appointmentId   String?         @unique @db.Uuid
+  status          EncounterStatus @default(DRAFT)
+  chiefComplaint  String?         @db.Text
+  history         String?         @db.Text
+  examination     String?         @db.Text
+  assessment      String?         @db.Text
+  plan            String?         @db.Text
+  notes           String?         @db.Text
+  signedAt        DateTime?       @db.Timestamptz(3)
+  authoredById    String          @db.Uuid
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Restrict)
+  doctor        DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  authoredBy    User          @relation("EncounterAuthor", fields: [authoredById], references: [id], onDelete: Restrict)
+
+  diagnoses     Diagnosis[]
+  prescriptions Prescription[]
+  vitalSigns    VitalSign[]
+  labResults    LabResult[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([medicalRecordId, createdAt])
+  @@index([doctorId, createdAt])
+  @@index([status, signedAt])
+  @@map("clinical_encounters")
+}
+
+model Diagnosis {
+  id          String        @id @default(uuid()) @db.Uuid
+  encounterId String        @db.Uuid
+  code        String?       @db.VarChar(50)
+  system      String?       @db.VarChar(50)
+  title       String        @db.VarChar(300)
+  description String?       @db.Text
+  type        DiagnosisType @default(SECONDARY)
+
+  encounter ClinicalEncounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([encounterId, type])
+  @@index([code])
+  @@map("diagnoses")
+}
+
+model Prescription {
+  id           String             @id @default(uuid()) @db.Uuid
+  encounterId  String             @db.Uuid
+  doctorId     String             @db.Uuid
+  status       PrescriptionStatus @default(DRAFT)
+  instructions String?            @db.Text
+  issuedAt     DateTime?          @db.Timestamptz(3)
+
+  encounter ClinicalEncounter  @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  doctor    DoctorProfile      @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  items     PrescriptionItem[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([encounterId, status])
+  @@index([doctorId, createdAt])
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  prescriptionId String  @db.Uuid
+  medicationName String  @db.VarChar(250)
+  dosage         String? @db.VarChar(120)
+  route          String? @db.VarChar(100)
+  frequency      String? @db.VarChar(150)
+  duration       String? @db.VarChar(100)
+  quantity       String? @db.VarChar(100)
+  instructions   String? @db.Text
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([prescriptionId])
+  @@map("prescription_items")
+}
+
+model PatientAllergy {
+  id               String          @id @default(uuid()) @db.Uuid
+  patientProfileId String          @db.Uuid
+  allergen         String          @db.VarChar(250)
+  reaction         String?         @db.Text
+  severity         AllergySeverity @default(UNKNOWN)
+  notes            String?         @db.Text
+  isActive         Boolean         @default(true)
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([patientProfileId, isActive])
+  @@map("patient_allergies")
+}
+
+model MedicalCondition {
+  id               String    @id @default(uuid()) @db.Uuid
+  patientProfileId String    @db.Uuid
+  title            String    @db.VarChar(250)
+  code             String?   @db.VarChar(50)
+  description      String?   @db.Text
+  diagnosedAt      DateTime? @db.Date
+  resolvedAt       DateTime? @db.Date
+  isActive         Boolean   @default(true)
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([patientProfileId, isActive])
+  @@map("medical_conditions")
+}
+
+model VitalSign {
+  id               String   @id @default(uuid()) @db.Uuid
+  medicalRecordId  String   @db.Uuid
+  encounterId      String?  @db.Uuid
+  systolic         Int?
+  diastolic        Int?
+  heartRate        Int?
+  respiratoryRate  Int?
+  temperatureC     Decimal? @db.Decimal(5, 2)
+  oxygenSaturation Decimal? @db.Decimal(5, 2)
+  heightCm         Decimal? @db.Decimal(6, 2)
+  weightKg         Decimal? @db.Decimal(6, 2)
+  measuredAt       DateTime @default(now()) @db.Timestamptz(3)
+  notes            String?  @db.Text
+
+  medicalRecord MedicalRecord      @relation(fields: [medicalRecordId], references: [id], onDelete: Restrict)
+  encounter     ClinicalEncounter? @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([medicalRecordId, measuredAt])
+  @@index([encounterId])
+  @@map("vital_signs")
+}
+
+model LabResult {
+  id              String    @id @default(uuid()) @db.Uuid
+  medicalRecordId String    @db.Uuid
+  encounterId     String?   @db.Uuid
+  testName        String    @db.VarChar(250)
+  testCode        String?   @db.VarChar(80)
+  value           String?   @db.VarChar(250)
+  unit            String?   @db.VarChar(50)
+  referenceRange  String?   @db.VarChar(150)
+  resultStatus    String?   @db.VarChar(80)
+  laboratory      String?   @db.VarChar(200)
+  performedAt     DateTime? @db.Timestamptz(3)
+  notes           String?   @db.Text
+
+  medicalRecord MedicalRecord      @relation(fields: [medicalRecordId], references: [id], onDelete: Restrict)
+  encounter     ClinicalEncounter? @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([medicalRecordId, performedAt])
+  @@index([encounterId])
+  @@map("lab_results")
+}
+
+model MedicalDocument {
+  id              String  @id @default(uuid()) @db.Uuid
+  medicalRecordId String  @db.Uuid
+  uploadedById    String  @db.Uuid
+  fileName        String  @db.VarChar(255)
+  storageKey      String  @unique @db.VarChar(500)
+  mimeType        String  @db.VarChar(120)
+  sizeBytes       BigInt
+  category        String? @db.VarChar(100)
+  description     String? @db.Text
+  checksum        String? @db.VarChar(128)
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Restrict)
+  uploadedBy    User          @relation("MedicalDocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([medicalRecordId, createdAt])
+  @@map("medical_documents")
+}
+
+model MedicalRecordConsent {
+  id              String               @id @default(uuid()) @db.Uuid
+  medicalRecordId String               @db.Uuid
+  doctorId        String               @db.Uuid
+  grantedById     String               @db.Uuid
+  status          MedicalConsentStatus @default(ACTIVE)
+  purpose         String?              @db.VarChar(500)
+  startsAt        DateTime             @default(now()) @db.Timestamptz(3)
+  expiresAt       DateTime?            @db.Timestamptz(3)
+  revokedAt       DateTime?            @db.Timestamptz(3)
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Restrict)
+  doctor        DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  grantedBy     User          @relation("ConsentGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([medicalRecordId, doctorId, status])
+  @@index([expiresAt])
+  @@map("medical_record_consents")
+}
+
+model MedicalRecordAccessLog {
+  id              String                    @id @default(uuid()) @db.Uuid
+  medicalRecordId String                    @db.Uuid
+  actorId         String                    @db.Uuid
+  action          MedicalRecordAccessAction
+  reason          String?                   @db.VarChar(500)
+  ipAddress       String?                   @db.VarChar(45)
+  userAgent       String?                   @db.Text
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Restrict)
+  actor         User          @relation("MedicalRecordAccessActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([medicalRecordId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("medical_record_access_logs")
 }

@@ -77,3 +77,16 @@ backup-*/
 **/backup-*/
 **/backups/
 **/*.before-*
+
+# Local duplicate projects and standalone packages
+/HadiMed-v2/
+/organization-foundation/
+
+# Temporary repair scripts and source references
+/rebuild-doctorbooking.cjs
+/fix-doctorbooking-labels.cjs
+/backend/frontend/src/DoctorBooking.tsx.git-head-reference
+
+# Accidental files in backend root
+/backend/src/index.css
+/crpt nodejsHadiMed*

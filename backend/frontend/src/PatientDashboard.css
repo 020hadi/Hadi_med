@@ -1,0 +1,349 @@
+.patient-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(8, 20, 42, .62);
+  backdrop-filter: blur(7px);
+  animation: patientEditFade .18s ease-out;
+}
+
+.patient-edit-modal {
+  width: min(100%, 570px);
+  max-height: min(90vh, 760px);
+  overflow-y: auto;
+  direction: rtl;
+  color: #17243b;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, .9);
+  border-radius: 22px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .24);
+  animation: patientEditUp .22s ease-out;
+}
+
+.patient-edit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 25px 27px 20px;
+  border-bottom: 1px solid #edf1f6;
+  background: linear-gradient(135deg, #f7fbff, #fff);
+}
+
+.patient-edit-eyebrow {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: #16877e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.patient-edit-header h2 {
+  margin: 0;
+  color: #14243d;
+  font-size: 21px;
+  font-weight: 850;
+}
+
+.patient-edit-header p {
+  margin: 8px 0 0;
+  color: #718096;
+  font-size: 13px;
+}
+
+.patient-edit-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.patient-edit-close:hover {
+  color: #be3545;
+  background: #fff0f1;
+}
+
+.patient-edit-form {
+  display: grid;
+  gap: 17px;
+  padding: 25px 27px 27px;
+}
+
+.patient-edit-form label {
+  display: grid;
+  gap: 8px;
+  color: #34445d;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.patient-edit-form input,
+.patient-edit-form select,
+.patient-edit-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 13px;
+  color: #1e293b;
+  background: #fbfdff;
+  border: 1px solid #dce4ee;
+  border-radius: 11px;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+
+.patient-edit-form textarea {
+  min-height: 105px;
+  resize: vertical;
+}
+
+.patient-edit-form input:focus,
+.patient-edit-form select:focus,
+.patient-edit-form textarea:focus {
+  background: #fff;
+  border-color: #168f87;
+  box-shadow: 0 0 0 3px rgba(22, 143, 135, .12);
+}
+
+.patient-edit-form label small {
+  color: #8794a7;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.patient-edit-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  padding-top: 7px;
+  margin-top: 2px;
+  border-top: 1px solid #edf1f6;
+}
+
+.patient-edit-actions button {
+  min-width: 112px;
+  min-height: 43px;
+  padding: 0 19px;
+  border: 0;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform .15s, opacity .15s, background .15s;
+}
+
+.patient-edit-actions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.patient-edit-actions button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.patient-edit-cancel {
+  color: #526176;
+  background: #edf2f7;
+}
+
+.patient-edit-save {
+  color: #fff;
+  background: linear-gradient(135deg, #087f78, #13a092);
+  box-shadow: 0 7px 18px rgba(13, 148, 136, .2);
+}
+
+@keyframes patientEditFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes patientEditUp {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 600px) {
+  .patient-edit-overlay { padding: 10px; align-items: flex-end; }
+  .patient-edit-modal { max-height: 92vh; border-radius: 20px 20px 14px 14px; }
+  .patient-edit-header { padding: 21px 19px 17px; }
+  .patient-edit-form { padding: 20px 19px 22px; }
+  .patient-edit-header h2 { font-size: 18px; }
+  .patient-edit-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .patient-edit-actions button { min-width: 0; }
+}
+/* Patient appointments and booking */
+.patient-appointments-panel {
+  min-height: 320px;
+}
+
+.patient-doctor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.patient-doctor-card {
+  border: 1px solid var(--patient-border, #e5eaf1);
+  border-radius: 16px;
+  padding: 20px;
+  background: var(--patient-card, #fff);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.patient-doctor-icon,
+.patient-appointment-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.patient-doctor-card h3,
+.patient-appointment-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.patient-doctor-card p,
+.patient-appointment-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.patient-doctor-card .patient-primary {
+  margin-top: auto;
+}
+
+.patient-appointment-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.patient-appointment-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 17px;
+  border: 1px solid var(--patient-border, #e5eaf1);
+  border-radius: 15px;
+  background: var(--patient-card, #fff);
+}
+
+.patient-appointment-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.patient-appointment-main > div:last-child {
+  display: grid;
+  gap: 7px;
+}
+
+.patient-appointment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.patient-appointment-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.patient-appointment-status {
+  display: inline-flex;
+  border-radius: 20px;
+  padding: 5px 10px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.patient-appointment-status.status-confirmed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.patient-appointment-status.status-cancelled,
+.patient-appointment-status.status-expired {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.patient-appointment-status.status-pending_verification {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.patient-appointment-cancel {
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  padding: 7px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #b91c1c;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.patient-empty-inline {
+  padding: 30px 15px;
+  text-align: center;
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 650px) {
+  .patient-appointment-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .patient-appointment-actions {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .patient-appointment-meta {
+    flex-direction: column;
+    gap: 5px;
+  }
+}
